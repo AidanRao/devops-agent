@@ -37,28 +37,33 @@ jobs:
         run: go mod download
 
       - name: Build
+        if: matrix.os != 'windows-latest'
         env:
-          GOOS: ${{ matrix.os == 'ubuntu-latest' && 'linux' || matrix.os == 'macos-latest' && 'darwin' || 'windows' }}
+          GOOS: ${{ matrix.os == 'ubuntu-latest' && 'linux' || 'darwin' }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
           VERSION: ${{ github.ref_name }}
           COMMIT: ${{ github.sha }}
-          BUILD_TIME: ${{ github.event.head_commit.timestamp }}
         run: |
           OS_NAME=$(echo $GOOS | tr '[:lower:]' '[:upper:]')
-          EXTENSION=""
-          if [ "$GOOS" = "windows" ]; then
-            EXTENSION=".exe"
-          fi
-          OUTPUT_NAME="${{ env.BINARY_NAME }}-${OS_NAME}-${GOARCH}${EXTENSION}"
-          
+          OUTPUT_NAME="${{ env.BINARY_NAME }}-${OS_NAME}-${GOARCH}"
           mkdir -p bin
-          go build -ldflags "-s -w \
-            -X 'main.version=$VERSION' \
-            -X 'main.commit=$COMMIT' \
-            -X 'main.buildTime=$BUILD_TIME'" \
-            -o "bin/${OUTPUT_NAME}" ./cmd/agent
-          
+          go build -ldflags "-s -w -X 'main.version=$VERSION' -X 'main.commit=$COMMIT'" -o "bin/${OUTPUT_NAME}" ./cmd/agent
+          echo "OUTPUT_NAME=$OUTPUT_NAME" >> $GITHUB_ENV
+
+      - name: Build (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        env:
+          GOOS: windows
+          GOARCH: ${{ matrix.goarch }}
+          CGO_ENABLED: 0
+          VERSION: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          OUTPUT_NAME="${{ env.BINARY_NAME }}-WINDOWS-${GOARCH}.exe"
+          mkdir -p bin
+          go build -ldflags "-s -w -X 'main.version=$VERSION' -X 'main.commit=$COMMIT'" -o "bin/${OUTPUT_NAME}" ./cmd/agent
           echo "OUTPUT_NAME=$OUTPUT_NAME" >> $GITHUB_ENV
 
       - name: Upload artifacts
