@@ -71,7 +71,7 @@ jobs:
 
       - name: Setup OSSUTIL
         run: |
-          wget https://gosspublic.alicdn.com/ossutil/ossutil-cn-hangzhou.zip -O ossutil.zip
+          wget https://gosspublic.alicdn.com/ossutil/v2/2.3.0/ossutil-2.3.0-linux-amd64.zip -O ossutil.zip
           unzip -q ossutil.zip -d /tmp
           chmod +x /tmp/ossutil
           echo "/tmp" >> $GITHUB_PATH
