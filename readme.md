@@ -12,6 +12,22 @@
 
 ---
 
+## 下载与安装
+
+你可以直接下载预编译的二进制文件，无需编译：
+
+```bash
+# Linux (amd64)
+curl -Lo agent https://aidan-space.oss-cn-beijing.aliyuncs.com/devops/agent/agent-linux-amd64
+chmod +x agent
+
+# macOS
+curl -Lo agent https://aidan-space.oss-cn-beijing.aliyuncs.com/devops/agent/agent-macos
+chmod +x agent
+```
+
+---
+
 ## 快速开始
 
 ### 1. 环境准备
@@ -53,47 +69,72 @@ MAX_SKEW_SECONDS=300
 打开一个新的终端窗口：
 
 ```bash
-# 进入 agent-go 目录
-cd agent-go
-
-# 编译 Agent (将在当前目录生成 agent 可执行文件)
-go build ./cmd/agent
-
 # 运行 Agent（默认读取同目录下的 config.yaml）
 ./agent
+
+# 或指定配置文件路径
+./agent --config /path/to/config.yaml
 ```
 
 示例 `config.yaml`：
 
 ```yaml
-serverUrl: "ws://localhost:8000/ws"
-keyDir: "./keys"
-logLevel: "debug"
-tickIntervalMs: 15000
-enableShell: false
-authToken: "change_me"          # 首次连接使用的静态网关 Token，可被 AGENT_AUTH_TOKEN 覆盖
-deviceTokenPath: "./device.token" # hello-ok 下发的 deviceToken 将持久化在此路径，可被 AGENT_DEVICE_TOKEN_PATH 覆盖
+server:
+  url: "ws://localhost:8000/ws"
+
+keys:
+  dir: "./keys"
+
+auth:
+  token: "change_me"
+  deviceTokenPath: "./device.token"
+
+heartbeat:
+  tickIntervalMs: 15000
+
+shell:
+  enabled: true
+  workDir: ""
+
+logging:
+  level: "info"
 ```
 
-支持的环境变量（优先级高于 YAML）：
+支持的环境变量（优先级高于 YAML，双下划线表示嵌套层级）：
 
-- `AGENT_SERVER_URL`：覆盖 `serverUrl`；
-- `AGENT_KEY_DIR`：覆盖 `keyDir`；
-- `AGENT_LOG_LEVEL`：覆盖 `logLevel`；
-- `AGENT_TICK_INTERVAL_MS`：覆盖 `tickIntervalMs`；
-- `AGENT_ENABLE_SHELL`：`true/1/yes` 时启用本地 shell 执行；
-- `AGENT_AUTH_TOKEN`：覆盖 `authToken`；
-- `AGENT_DEVICE_TOKEN_PATH`：覆盖 `deviceTokenPath`。
+- `AGENT_SERVER__URL`：覆盖 `server.url`；
+- `AGENT_KEYS__DIR`：覆盖 `keys.dir`；
+- `AGENT_AUTH__TOKEN`：覆盖 `auth.token`；
+- `AGENT_AUTH__DEVICE_TOKEN_PATH`：覆盖 `auth.deviceTokenPath`；
+- `AGENT_HEARTBEAT__TICK_INTERVAL_MS`：覆盖 `heartbeat.tickIntervalMs`；
+- `AGENT_SHELL__ENABLED`：`true/1/yes` 时启用本地 shell 执行；
+- `AGENT_SHELL__WORK_DIR`：覆盖 `shell.workDir`；
+- `AGENT_LOGGING__LEVEL`：覆盖 `logging.level`。
 
 Agent 启动后会：
 
-1. 在 `keyDir` 目录自动生成 Ed25519 公私钥对；
+1. 在 `keys.dir` 目录自动生成 Ed25519 公私钥对；
 2. 基于公钥指纹计算稳定的 `deviceId`；
-3. 尝试从 `deviceTokenPath` 加载历史 deviceToken（若存在）；
-4. 通过 WebSocket 连接到 `serverUrl` 并完成握手与心跳；
-5. 若握手返回新的 `deviceToken`，会持久化写回 `deviceTokenPath`。
+3. 尝试从 `auth.deviceTokenPath` 加载历史 deviceToken（若存在）；
+4. 通过 WebSocket 连接到 `server.url` 并完成握手与心跳；
+5. 若握手返回新的 `deviceToken`，会持久化写回 `auth.deviceTokenPath`。
 
 > 提示：由于 Agent 使用 `nhooyr.io/websocket` 和 `github.com/google/uuid`，首次在干净环境中构建前需要联网执行一次 `go get`/`go mod download` 以拉取依赖。
+
+---
+
+## 配置说明
+
+| 配置项 | 环境变量 | 默认值 | 说明 |
+|--------|----------|--------|------|
+| `server.url` | `AGENT_SERVER__URL` | `ws://localhost:8000/ws` | 服务端 WebSocket 地址 |
+| `keys.dir` | `AGENT_KEYS__DIR` | `./keys` | 密钥文件存放目录 |
+| `auth.token` | `AGENT_AUTH__TOKEN` | `change_me` | 首次连接使用的静态网关 Token |
+| `auth.deviceTokenPath` | `AGENT_AUTH__DEVICE_TOKEN_PATH` | `./device.token` | deviceToken 持久化路径 |
+| `heartbeat.tickIntervalMs` | `AGENT_HEARTBEAT__TICK_INTERVAL_MS` | `15000` | 心跳间隔（毫秒） |
+| `shell.enabled` | `AGENT_SHELL__ENABLED` | `true` | 是否启用命令执行 |
+| `shell.workDir` | `AGENT_SHELL__WORK_DIR` | 空 | 命令执行默认工作目录 |
+| `logging.level` | `AGENT_LOGGING__LEVEL` | `info` | 日志级别（debug/info/warn/error） |
 
 ---
 

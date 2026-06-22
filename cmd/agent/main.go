@@ -84,9 +84,11 @@ func serveWithReconnect(ctx context.Context, cfg *agentconfig.Config, keyPair ag
 			logger.Printf("[agent] close terminal sessions error: %v", closeErr)
 		}
 
-		if err == nil || errors.Is(err, context.Canceled) {
+		if err == nil {
 			return nil
 		}
+
+		backoff = reconnectInitialBackoff
 
 		if errors.Is(err, ws.ErrAuthRejected) && cfg.Auth.DeviceToken != "" {
 			logger.Printf("[agent] device token rejected by server, falling back to static auth token: %v", err)

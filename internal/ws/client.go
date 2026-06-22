@@ -121,6 +121,10 @@ func (c *Client) ConnectAndServe(ctx context.Context) error {
 
 	_, msg, err = conn.Read(ctx)
 	if err != nil {
+		var closeErr websocket.CloseError
+		if errors.As(err, &closeErr) && closeErr.Code == websocket.StatusPolicyViolation {
+			return fmt.Errorf("%w: server closed connection with PolicyViolation", ErrAuthRejected)
+		}
 		return fmt.Errorf("read hello-ok: %w", err)
 	}
 
