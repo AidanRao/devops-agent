@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version, e.g. v1.0.0'
+        required: false
+        type: string
 
 env:
   GO_VERSION: '1.21'
@@ -16,12 +21,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
-        goarch: [amd64]
         include:
           - os: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          - os: ubuntu-latest
+            goos: linux
             goarch: arm64
           - os: macos-latest
+            goos: darwin
+            goarch: amd64
+          - os: macos-latest
+            goos: darwin
             goarch: arm64
 
     steps:
@@ -38,77 +49,106 @@ jobs:
 
       - name: Build
         env:
-          GOOS: ${{ matrix.os == 'ubuntu-latest' && 'linux' || 'darwin' }}
+          GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
           CGO_ENABLED: 0
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ inputs.version || github.ref_name }}
           COMMIT: ${{ github.sha }}
         run: |
-          OS_NAME=$(echo $GOOS | tr '[:lower:]' '[:upper:]')
-          OUTPUT_NAME="${{ env.BINARY_NAME }}-${OS_NAME}-${GOARCH}"
+          set -euo pipefail
+
+          OS_NAME=$(echo "$GOOS" | tr '[:lower:]' '[:upper:]')
+          OUTPUT_NAME="${BINARY_NAME}-${OS_NAME}-${GOARCH}"
+
           mkdir -p bin
-          go build -ldflags "-s -w -X 'main.version=$VERSION' -X 'main.commit=$COMMIT'" -o "bin/${OUTPUT_NAME}" ./cmd/agent
-          echo "OUTPUT_NAME=$OUTPUT_NAME" >> $GITHUB_ENV
+
+          go build \
+            -ldflags "-s -w -X 'main.version=${VERSION}' -X 'main.commit=${COMMIT}'" \
+            -o "bin/${OUTPUT_NAME}" \
+            ./cmd/agent
+
+          echo "OUTPUT_NAME=${OUTPUT_NAME}" >> "$GITHUB_ENV"
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ env.BINARY_NAME }}-${{ matrix.os }}-${{ matrix.goarch }}
+          name: ${{ env.BINARY_NAME }}-${{ matrix.goos }}-${{ matrix.goarch }}
           path: bin/${{ env.OUTPUT_NAME }}
           retention-days: 30
 
   upload-to-oss:
     needs: build
     runs-on: ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
 
+    steps:
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
-      - name: Setup OSSUTIL
+      - name: Setup ossutil
         run: |
+          set -euo pipefail
+
           wget https://gosspublic.alicdn.com/ossutil/v2/2.3.0/ossutil-2.3.0-linux-amd64.zip -O ossutil.zip
           unzip -q ossutil.zip -d /tmp
           chmod +x /tmp/ossutil-2.3.0-linux-amd64/ossutil
-          echo "/tmp/ossutil-2.3.0-linux-amd64" >> $GITHUB_PATH
 
-      - name: Configure OSSUTIL
-        env:
-          OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
-          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
-          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
-        run: |
-          /tmp/ossutil-2.3.0-linux-amd64/ossutil config \
-            --endpoint=$OSS_ENDPOINT \
-            --access-key-id=$OSS_ACCESS_KEY_ID \
-            --access-key-secret=$OSS_ACCESS_KEY_SECRET
+          echo "/tmp/ossutil-2.3.0-linux-amd64" >> "$GITHUB_PATH"
 
-            - name: Upload to OSS
+      - name: Check OSS secrets
         env:
           OSS_BUCKET: ${{ secrets.OSS_BUCKET }}
           OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
           OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
           OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
-          VERSION: ${{ github.ref_name }}
         run: |
-          TAG_NAME=${VERSION#v}
+          set -euo pipefail
+
+          test -n "$OSS_BUCKET" || (echo "OSS_BUCKET is empty" && exit 1)
+          test -n "$OSS_ENDPOINT" || (echo "OSS_ENDPOINT is empty" && exit 1)
+          test -n "$OSS_ACCESS_KEY_ID" || (echo "OSS_ACCESS_KEY_ID is empty" && exit 1)
+          test -n "$OSS_ACCESS_KEY_SECRET" || (echo "OSS_ACCESS_KEY_SECRET is empty" && exit 1)
+
+      - name: Upload to OSS
+        env:
+          OSS_BUCKET: ${{ secrets.OSS_BUCKET }}
+          OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          VERSION: ${{ inputs.version || github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          TAG_NAME="${VERSION#v}"
           OSS_PATH="devops/agent/${TAG_NAME}/"
 
-          find artifacts -type f -name "agent*" | while read file; do
+          echo "Release version: ${VERSION}"
+          echo "OSS path: oss://${OSS_BUCKET}/${OSS_PATH}"
+
+          echo "Downloaded artifacts:"
+          find artifacts -type f -print
+
+          find artifacts -type f -name "agent-*" | while read -r file; do
             filename=$(basename "$file")
-            echo "Uploading $filename to oss://${OSS_BUCKET}/${OSS_PATH}${filename}"
+
+            echo "Uploading ${filename} to oss://${OSS_BUCKET}/${OSS_PATH}${filename}"
+
             ossutil cp "$file" "oss://${OSS_BUCKET}/${OSS_PATH}${filename}" \
               -e "$OSS_ENDPOINT" \
               -i "$OSS_ACCESS_KEY_ID" \
               -k "$OSS_ACCESS_KEY_SECRET"
           done
 
-          cd artifacts
-          sha256sum */agent-* > checksums.txt
+          rm -f checksums.txt
+
+          find artifacts -type f -name "agent-*" | sort | while read -r file; do
+            filename=$(basename "$file")
+            sha256sum "$file" | awk -v name="$filename" '{print $1 "  " name}' >> checksums.txt
+          done
+
+          echo "Generated checksums:"
+          cat checksums.txt
 
           ossutil cp checksums.txt "oss://${OSS_BUCKET}/${OSS_PATH}checksums.txt" \
             -e "$OSS_ENDPOINT" \
@@ -121,9 +161,12 @@ jobs:
           OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
           OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
           OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
-          VERSION: ${{ github.ref_name }}
+          VERSION: ${{ inputs.version || github.ref_name }}
         run: |
-          TAG_NAME=${VERSION#v}
+          set -euo pipefail
+
+          TAG_NAME="${VERSION#v}"
+
           ossutil ls "oss://${OSS_BUCKET}/devops/agent/${TAG_NAME}/" \
             -e "$OSS_ENDPOINT" \
             -i "$OSS_ACCESS_KEY_ID" \
