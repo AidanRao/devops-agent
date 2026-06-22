@@ -73,8 +73,8 @@ jobs:
         run: |
           wget https://gosspublic.alicdn.com/ossutil/v2/2.3.0/ossutil-2.3.0-linux-amd64.zip -O ossutil.zip
           unzip -q ossutil.zip -d /tmp
-          chmod +x /tmp/ossutil
-          echo "/tmp" >> $GITHUB_PATH
+          chmod +x /tmp/ossutil-2.3.0-linux-amd64/ossutil
+          echo "/tmp/ossutil-2.3.0-linux-amd64" >> $GITHUB_PATH
 
       - name: Configure OSSUTIL
         env:
@@ -83,7 +83,7 @@ jobs:
           OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
           OSS_BUCKET: ${{ secrets.OSS_BUCKET }}
         run: |
-          /tmp/ossutil config \
+          /tmp/ossutil-2.3.0-linux-amd64/ossutil config \
             --endpoint=$OSS_ENDPOINT \
             --access-key-id=$OSS_ACCESS_KEY_ID \
             --access-key-secret=$OSS_ACCESS_KEY_SECRET \
@@ -102,7 +102,7 @@ jobs:
               if [ -f "$file" ]; then
                 filename=$(basename "$file")
                 echo "Uploading $filename to oss://${OSS_BUCKET}/${OSS_PATH}${filename}"
-                /tmp/ossutil cp "$file" "oss://${OSS_BUCKET}/${OSS_PATH}${filename}"
+                /tmp/ossutil-2.3.0-linux-amd64/ossutil cp "$file" "oss://${OSS_BUCKET}/${OSS_PATH}${filename}"
               fi
             done
           done
@@ -112,7 +112,7 @@ jobs:
           find . -type f -name "agent*" | while read f; do
             sha256sum "$f" >> checksums.txt
           done
-          /tmp/ossutil cp checksums.txt "oss://${OSS_BUCKET}/${OSS_PATH}checksums.txt"
+          /tmp/ossutil-2.3.0-linux-amd64/ossutil cp checksums.txt "oss://${OSS_BUCKET}/${OSS_PATH}checksums.txt"
 
       - name: List OSS files
         env:
@@ -120,4 +120,4 @@ jobs:
           VERSION: ${{ github.ref_name }}
         run: |
           TAG_NAME=${VERSION#v}
-          /tmp/ossutil ls "oss://${OSS_BUCKET}/devops-agent/${TAG_NAME}/"
+          /tmp/ossutil-2.3.0-linux-amd64/ossutil ls "oss://${OSS_BUCKET}/devops-agent/${TAG_NAME}/"
