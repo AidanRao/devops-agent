@@ -95,21 +95,15 @@ jobs:
           TAG_NAME=${VERSION#v}
           OSS_PATH="devops/agent/${TAG_NAME}/"
           
-          for dir in artifacts/*/; do
-            for file in "$dir"*/; do
-              if [ -f "$file" ]; then
-                filename=$(basename "$file")
-                echo "Uploading $filename to oss://${OSS_BUCKET}/${OSS_PATH}${filename}"
-                /tmp/ossutil-2.3.0-linux-amd64/ossutil cp "$file" "oss://${OSS_BUCKET}/${OSS_PATH}${filename}"
-              fi
-            done
+          find artifacts -type f -name "agent*" | while read file; do
+            filename=$(basename "$file")
+            echo "Uploading $filename to oss://${OSS_BUCKET}/${OSS_PATH}${filename}"
+            /tmp/ossutil-2.3.0-linux-amd64/ossutil cp "$file" "oss://${OSS_BUCKET}/${OSS_PATH}${filename}"
           done
           
           # Upload checksums file
           cd artifacts
-          find . -type f -name "agent*" | while read f; do
-            sha256sum "$f" >> checksums.txt
-          done
+          sha256sum */agent-* > checksums.txt 2>/dev/null || true
           /tmp/ossutil-2.3.0-linux-amd64/ossutil cp checksums.txt "oss://${OSS_BUCKET}/${OSS_PATH}checksums.txt"
 
       - name: List OSS files
@@ -118,4 +112,4 @@ jobs:
           VERSION: ${{ github.ref_name }}
         run: |
           TAG_NAME=${VERSION#v}
-          /tmp/ossutil-2.3.0-linux-amd64/ossutil ls "oss://${OSS_BUCKET}/devops-agent/${TAG_NAME}/"
+          /tmp/ossutil-2.3.0-linux-amd64/ossutil ls "oss://${OSS_BUCKET}/devops/agent/${TAG_NAME}/"
